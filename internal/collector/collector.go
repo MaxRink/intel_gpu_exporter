@@ -75,7 +75,31 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 		go func(s Source) {
 			defer wg.Done()
 			start := time.Now()
-			err := s.Update(ctx, ch)
+			sch := make(chan prometheus.Metric)
+			errc := make(chan error, 1)
+			go func() {
+				errc <- s.Update(ctx, sch)
+				close(sch)
+			}()
+			var err error
+		forward:
+			for {
+				select {
+				case m, ok := <-sch:
+					if !ok {
+						err = <-errc
+						break forward
+					}
+					ch <- m
+				case <-ctx.Done():
+					err = ctx.Err()
+					go func() {
+						for range sch {
+						}
+					}()
+					break forward
+				}
+			}
 			elapsed := time.Since(start).Seconds()
 			ch <- prometheus.MustNewConstMetric(r.scrapeDuration, prometheus.GaugeValue, elapsed, s.Name())
 			success := 1.0
