@@ -63,12 +63,12 @@ func (c *Hwmon) Update(ctx context.Context, ch chan<- prometheus.Metric) error {
 			for _, f := range files {
 				name := filepath.Base(f)
 				switch {
-				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_max"):
-					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_max")
-					c.emitScaled(ch, c.powerMax, f, 1e-6, base, channel)
 				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_rated_max"):
 					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_rated_max")
 					c.emitScaled(ch, c.powerRated, f, 1e-6, base, channel)
+				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_max"):
+					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_max")
+					c.emitScaled(ch, c.powerMax, f, 1e-6, base, channel)
 				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_crit"):
 					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_crit")
 					c.emitScaled(ch, c.powerCrit, f, 1e-6, base, channel)
