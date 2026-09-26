@@ -18,11 +18,13 @@ type Fdinfo struct {
 	procRoot string
 	topN     int
 
-	engineTime *prometheus.Desc
-	memTotal   *prometheus.Desc
-	memRes     *prometheus.Desc
-	memShared  *prometheus.Desc
-	dropped    *prometheus.Desc
+	engineTime        *prometheus.Desc
+	engineCycles      *prometheus.Desc
+	engineTotalCycles *prometheus.Desc
+	memTotal          *prometheus.Desc
+	memRes            *prometheus.Desc
+	memShared         *prometheus.Desc
+	dropped           *prometheus.Desc
 }
 
 func NewFdinfo(procRoot string, topN int) *Fdinfo {
@@ -34,6 +36,16 @@ func NewFdinfo(procRoot string, topN int) *Fdinfo {
 		engineTime: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "client", "engine_time_seconds_total"),
 			"Cumulative per-client GPU engine time, parsed from drm-engine-* fdinfo keys.",
+			engineLabels, nil,
+		),
+		engineCycles: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "client", "engine_cycles_total"),
+			"Cumulative per-client GPU engine busy cycles, parsed from drm-cycles-* fdinfo keys.",
+			engineLabels, nil,
+		),
+		engineTotalCycles: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "client", "engine_total_cycles_total"),
+			"Cumulative GPU engine cycles elapsed, parsed from drm-total-cycles-* fdinfo keys.",
 			engineLabels, nil,
 		),
 		memTotal: prometheus.NewDesc(
@@ -66,18 +78,22 @@ func (c *Fdinfo) Available(gpus []discovery.GPU) bool { return len(gpus) > 0 }
 type procKey struct{ pid, comm, driver, pci string }
 
 type procData struct {
-	engine map[string]uint64
-	total  map[string]uint64
-	res    map[string]uint64
-	shared map[string]uint64
+	engine      map[string]uint64
+	cycles      map[string]uint64
+	totalCycles map[string]uint64
+	total       map[string]uint64
+	res         map[string]uint64
+	shared      map[string]uint64
 }
 
 func newProcData() *procData {
 	return &procData{
-		engine: map[string]uint64{},
-		total:  map[string]uint64{},
-		res:    map[string]uint64{},
-		shared: map[string]uint64{},
+		engine:      map[string]uint64{},
+		cycles:      map[string]uint64{},
+		totalCycles: map[string]uint64{},
+		total:       map[string]uint64{},
+		res:         map[string]uint64{},
+		shared:      map[string]uint64{},
 	}
 }
 
@@ -120,8 +136,13 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 			}
 			for k, v := range data {
 				switch {
+				case strings.HasPrefix(k, "drm-engine-capacity-"):
 				case strings.HasPrefix(k, "drm-engine-"):
 					pd.engine[strings.TrimPrefix(k, "drm-engine-")] += parseNs(v)
+				case strings.HasPrefix(k, "drm-cycles-"):
+					pd.cycles[strings.TrimPrefix(k, "drm-cycles-")] += parseNs(v)
+				case strings.HasPrefix(k, "drm-total-cycles-"):
+					pd.totalCycles[strings.TrimPrefix(k, "drm-total-cycles-")] += parseNs(v)
 				case strings.HasPrefix(k, "drm-total-"):
 					pd.total[strings.TrimPrefix(k, "drm-total-")] += parseBytes(v)
 				case strings.HasPrefix(k, "drm-resident-"):
@@ -144,6 +165,14 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 		for engine, ns := range pd.engine {
 			ch <- prometheus.MustNewConstMetric(c.engineTime, prometheus.CounterValue,
 				float64(ns)/1e9, k.pci, k.driver, k.pid, k.comm, engine)
+		}
+		for engine, v := range pd.cycles {
+			ch <- prometheus.MustNewConstMetric(c.engineCycles, prometheus.CounterValue,
+				float64(v), k.pci, k.driver, k.pid, k.comm, engine)
+		}
+		for engine, v := range pd.totalCycles {
+			ch <- prometheus.MustNewConstMetric(c.engineTotalCycles, prometheus.CounterValue,
+				float64(v), k.pci, k.driver, k.pid, k.comm, engine)
 		}
 		for region, v := range pd.total {
 			ch <- prometheus.MustNewConstMetric(c.memTotal, prometheus.GaugeValue,
@@ -178,7 +207,22 @@ func topNByActivity(procs map[procKey]*procData, n int) []procKey {
 		}
 		totals[k] = t
 	}
-	sort.Slice(keys, func(i, j int) bool { return totals[keys[i]] > totals[keys[j]] })
+	sort.Slice(keys, func(i, j int) bool {
+		if totals[keys[i]] != totals[keys[j]] {
+			return totals[keys[i]] > totals[keys[j]]
+		}
+		a, b := keys[i], keys[j]
+		if a.pid != b.pid {
+			return a.pid < b.pid
+		}
+		if a.comm != b.comm {
+			return a.comm < b.comm
+		}
+		if a.driver != b.driver {
+			return a.driver < b.driver
+		}
+		return a.pci < b.pci
+	})
 	return keys[:n]
 }
 

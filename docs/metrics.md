@@ -31,6 +31,7 @@ Common labels: `card`, `pci`, `device`, `driver`.
 Labels: `pci`, `driver`, `pid`, `comm`, `engine` or `region`. Capped at `--collector.fdinfo.top-n` busiest processes.
 
 - `intel_gpu_client_engine_time_seconds_total`
+- `intel_gpu_client_engine_{cycles,total_cycles}_total` from the xe drm-cycles and drm-total-cycles keys
 - `intel_gpu_client_memory_{total,resident,shared}_bytes`
 - `intel_gpu_client_dropped_processes` — processes dropped by the cap
 
