@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/xsaveopt/intel_gpu_exporter/internal/sysutil"
@@ -111,7 +112,14 @@ func discoverTiles(driver Driver, devPath string) []Tile {
 	case DriverXe:
 		var tiles []Tile
 		tileDirs, _ := filepath.Glob(filepath.Join(devPath, "tile*"))
-		sort.Strings(tileDirs)
+		sort.Slice(tileDirs, func(i, j int) bool {
+			a, errA := strconv.Atoi(strings.TrimPrefix(filepath.Base(tileDirs[i]), "tile"))
+			b, errB := strconv.Atoi(strings.TrimPrefix(filepath.Base(tileDirs[j]), "tile"))
+			if errA != nil || errB != nil {
+				return tileDirs[i] < tileDirs[j]
+			}
+			return a < b
+		})
 		for ti, td := range tileDirs {
 			tile := Tile{Index: ti, Path: td}
 			gtDirs, _ := filepath.Glob(filepath.Join(td, "gt*"))
