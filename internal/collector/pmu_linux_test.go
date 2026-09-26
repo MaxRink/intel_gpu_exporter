@@ -436,6 +436,65 @@ func TestPMUUpdateNoEvents(t *testing.T) {
 	}
 }
 
+func hostHasDRMPMU(t *testing.T) bool {
+	t.Helper()
+	pmus, err := discoverPMUs()
+	return err == nil && len(pmus) > 0
+}
+
+func TestDiscoverPMUsIgnoresNonDRMPMUs(t *testing.T) {
+	pmus, err := discoverPMUs()
+	if err != nil {
+		t.Skipf("event_source devices not readable here: %v", err)
+	}
+	for _, pm := range pmus {
+		if pm.name != "i915" && !strings.HasPrefix(pm.name, "i915_") && !strings.HasPrefix(pm.name, "xe_") {
+			t.Errorf("discoverPMUs returned non-DRM PMU %q", pm.name)
+		}
+	}
+}
+
+func TestPMUOpenWithoutDRMPMU(t *testing.T) {
+	if hostHasDRMPMU(t) {
+		t.Skip("host exposes an i915 or xe PMU")
+	}
+	p := newTestPMU()
+	if err := p.open(); err == nil {
+		t.Error("open should fail without an i915 or xe PMU")
+	}
+	if len(p.events) != 0 {
+		t.Errorf("open registered %d events without a DRM PMU", len(p.events))
+	}
+	if p.Available(nil) {
+		t.Error("Available should be false without an i915 or xe PMU")
+	}
+}
+
+func TestPerfOpenSoftwareEvent(t *testing.T) {
+	fd, err := perfOpen(unix.PERF_TYPE_SOFTWARE, unix.PERF_COUNT_SW_TASK_CLOCK, 0)
+	if errors.Is(err, unix.EACCES) || errors.Is(err, unix.EPERM) || errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.ENOENT) {
+		t.Skipf("perf_event_open not permitted here: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("perfOpen: %v", err)
+	}
+	closeFDs(t, fd)
+	if _, err := perfRead(fd); err != nil {
+		t.Errorf("perfRead on an opened event: %v", err)
+	}
+}
+
+func TestPerfOpenInvalidType(t *testing.T) {
+	fd, err := perfOpen(0xfffffff0, 0, 0)
+	if err == nil {
+		_ = unix.Close(fd)
+		t.Fatal("perfOpen should fail for an unknown PMU type")
+	}
+	if fd != -1 {
+		t.Errorf("fd = %d on failure, want -1", fd)
+	}
+}
+
 func TestPMUAvailableWithOpenEvents(t *testing.T) {
 	fd := pmuPipe(t, nil)
 	p := newTestPMU()

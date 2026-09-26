@@ -156,6 +156,57 @@ func TestRegistryTimesOutSlowSources(t *testing.T) {
 	}
 }
 
+type stuckSource struct {
+	name    string
+	release chan struct{}
+}
+
+func (s *stuckSource) Name() string { return s.name }
+
+func (s *stuckSource) Available([]discovery.GPU) bool { return true }
+
+func (s *stuckSource) Update(context.Context, chan<- prometheus.Metric) error {
+	<-s.release
+	return nil
+}
+
+func TestRegistryCollectReturnsWhenSourceIgnoresContext(t *testing.T) {
+	stuck := &stuckSource{name: "stuck", release: make(chan struct{})}
+	t.Cleanup(func() { close(stuck.release) })
+	fast := &fakeSource{name: "fast", available: true}
+	r := testRegistry(t, 20*time.Millisecond, stuck, fast)
+
+	ch := make(chan prometheus.Metric, 64)
+	done := make(chan struct{})
+	go func() {
+		r.Collect(ch)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Collect is still blocked long after the scrape timeout because a source ignored its context")
+	}
+
+	var got []string
+	for len(ch) > 0 {
+		m := <-ch
+		var pb dto.Metric
+		if err := m.Write(&pb); err != nil {
+			t.Fatalf("write metric: %v", err)
+		}
+		if strings.Contains(m.Desc().String(), "scrape_success") {
+			got = append(got, labelString(&pb)+" "+valueString(&pb))
+		}
+	}
+	slices.Sort(got)
+	want := []string{`{source="fast"} 1`, `{source="stuck"} 0`}
+	if !slices.Equal(got, want) {
+		t.Errorf("scrape_success = %v, want %v", got, want)
+	}
+}
+
 func TestRegistryHealthyWithoutGPUs(t *testing.T) {
 	r := NewRegistry(slog.New(slog.DiscardHandler), nil, time.Second)
 	if !r.Healthy() {

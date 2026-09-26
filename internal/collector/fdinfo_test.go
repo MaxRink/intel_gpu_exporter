@@ -3,6 +3,7 @@ package collector
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,7 +200,6 @@ func TestFdinfoUpdate(t *testing.T) {
 	c := NewFdinfo(root, 0)
 	assertSamples(t, c, []string{
 		`intel_gpu_client_dropped_processes 0`,
-		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="capacity-video",pci="0000:00:02.0",pid="1042"} 2e-09`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="copy",pci="0000:00:02.0",pid="1042"} 0`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="render",pci="0000:00:02.0",pid="1042"} 9.204536832`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="video",pci="0000:00:02.0",pid="1042"} 1.024`,
@@ -276,5 +276,51 @@ func TestFdinfoAvailable(t *testing.T) {
 	}
 	if !c.Available([]discovery.GPU{{Card: "card0"}}) {
 		t.Error("Available should be true with a GPU present")
+	}
+}
+
+func TestFdinfoUpdateSkipsEngineCapacity(t *testing.T) {
+	root := fakeProcRoot(t, procSpec{pid: "1042", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt"}})
+	for _, s := range samples(t, NewFdinfo(root, 0)) {
+		if strings.Contains(s, `engine="capacity-`) {
+			t.Errorf("drm-engine-capacity-* is an engine count, not engine time: %s", s)
+		}
+	}
+}
+
+func TestFdinfoUpdateExportsXeCycles(t *testing.T) {
+	root := fakeProcRoot(t, procSpec{pid: "3141", comm: "vainfo", fdinfos: []string{"fdinfo_xe_cycles.txt"}})
+	got := samples(t, NewFdinfo(root, 0))
+	for _, engine := range []string{"rcs", "vcs"} {
+		found := slices.ContainsFunc(got, func(s string) bool {
+			return strings.HasPrefix(s, "intel_gpu_client_") &&
+				strings.Contains(s, `engine="`+engine+`"`) &&
+				strings.Contains(s, `pid="3141"`) &&
+				strings.Contains(s, `driver="xe"`)
+		})
+		if !found {
+			t.Errorf("no per-client series for xe engine %q from drm-cycles-%s, got %v", engine, engine, got)
+		}
+	}
+	for _, s := range got {
+		if strings.Contains(s, `region="cycles-`) {
+			t.Errorf("drm-total-cycles-* is a GPU cycle count, not a memory region: %s", s)
+		}
+	}
+}
+
+func TestTopNByActivityTiesAreDeterministic(t *testing.T) {
+	procs := map[procKey]*procData{}
+	for _, pid := range []string{"11", "12", "13", "14", "15", "16", "17", "18"} {
+		pd := newProcData()
+		pd.engine["render"] = 500
+		procs[procKey{pid: pid, comm: "app", driver: "i915", pci: "0000:00:02.0"}] = pd
+	}
+	first := topNByActivity(procs, 3)
+	for range 50 {
+		got := topNByActivity(procs, 3)
+		if !slices.Equal(got, first) {
+			t.Fatalf("topN selection among equally busy processes changed between calls: %v then %v", first, got)
+		}
 	}
 }

@@ -5,6 +5,7 @@ package levelzero
 import (
 	"errors"
 	"reflect"
+	"sync"
 	"testing"
 	"unsafe"
 )
@@ -647,5 +648,103 @@ func TestOpenWithoutLoader(t *testing.T) {
 	c, err := Open()
 	if c != nil || !errors.Is(err, errUnavailable) {
 		t.Errorf("Open = (%v, %v), want errUnavailable", c, err)
+	}
+}
+
+func withLoaded(t *testing.T) {
+	t.Helper()
+	savedErr := loadErr
+	loadOnce.Do(func() {})
+	loadErr = nil
+	t.Cleanup(func() {
+		loadOnce = sync.Once{}
+		loadErr = savedErr
+	})
+}
+
+func deviceEnumerators(pci func(DeviceHandle, *pciProperties) uint32) fnTable {
+	return fnTable{
+		zesDevicePciGetProperties:       pci,
+		zesDeviceEnumPowerDomains:       enumOf(nil),
+		zesDeviceEnumTemperatureSensors: enumOf(nil),
+		zesDeviceEnumFrequencyDomains:   enumOf(nil),
+		zesDeviceEnumEngineGroups:       enumOf(nil),
+		zesDeviceEnumRasErrorSets:       enumOf(nil),
+		zesDeviceEnumMemoryModules:      enumOf(nil),
+	}
+}
+
+func TestOpenEnumeratesDevicesAcrossDrivers(t *testing.T) {
+	if Available() {
+		t.Skip("level zero loader is installed on this host")
+	}
+	withLoaded(t)
+	drivers := handles(3)
+	devs := handles(3)
+	f := deviceEnumerators(func(h DeviceHandle, p *pciProperties) uint32 {
+		p.Address = pciAddress{Bus: uint32(idx(h) + 3)}
+		return zeResultSuccess
+	})
+	f.zesInit = func(flags uint32) uint32 {
+		if flags != 0 {
+			return zeErrorUnknown
+		}
+		return zeResultSuccess
+	}
+	f.zesDriverGet = func(count *uint32, out *DriverHandle) uint32 {
+		return enumOf(drivers)(nil, count, out)
+	}
+	f.zesDeviceGet = func(drv DriverHandle, count *uint32, out *DeviceHandle) uint32 {
+		switch idx(drv) {
+		case 0:
+			return enumOf(devs[:2])(drv, count, out)
+		case 1:
+			return enumFail(drv, count, out)
+		default:
+			return enumOf(devs[2:])(drv, count, out)
+		}
+	}
+	withFns(t, f)
+
+	c, err := Open()
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	var got []string
+	for _, d := range c.Devices() {
+		got = append(got, d.PCIBus)
+	}
+	want := []string{"0000:03:00.0", "0000:04:00.0", "0000:05:00.0"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("devices = %v, want %v", got, want)
+	}
+}
+
+func TestOpenErrors(t *testing.T) {
+	if Available() {
+		t.Skip("level zero loader is installed on this host")
+	}
+	cases := map[string]fnTable{
+		"init fails": {
+			zesInit: func(uint32) uint32 { return zeErrorUnknown },
+		},
+		"driver enumeration fails": {
+			zesInit:      func(uint32) uint32 { return zeResultSuccess },
+			zesDriverGet: func(*uint32, *DriverHandle) uint32 { return zeErrorUnknown },
+		},
+		"no drivers": {
+			zesInit:      func(uint32) uint32 { return zeResultSuccess },
+			zesDriverGet: func(count *uint32, _ *DriverHandle) uint32 { *count = 0; return zeResultSuccess },
+		},
+	}
+	for name, f := range cases {
+		t.Run(name, func(t *testing.T) {
+			withLoaded(t)
+			withFns(t, f)
+			c, err := Open()
+			if err == nil || c != nil {
+				t.Errorf("Open = (%v, %v), want an error", c, err)
+			}
+		})
 	}
 }

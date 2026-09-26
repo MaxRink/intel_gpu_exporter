@@ -53,3 +53,16 @@ func TestLevelZeroUpdateNoDevices(t *testing.T) {
 		t.Errorf("got %v, want no samples", got)
 	}
 }
+
+func TestLevelZeroAvailableWithoutLoader(t *testing.T) {
+	if levelzero.Available() {
+		t.Skip("level zero loader is installed on this host")
+	}
+	c := NewLevelZero(slog.New(slog.DiscardHandler))
+	if c.Available(nil) {
+		t.Error("Available should be false without the level zero loader")
+	}
+	if c.client != nil {
+		t.Error("Available should not keep a client when the loader is missing")
+	}
+}

@@ -41,10 +41,22 @@ func TestHwmonUpdate(t *testing.T) {
 	})
 }
 
-func TestHwmonUpdateRatedMaxIsShadowed(t *testing.T) {
+func TestHwmonUpdateRatedMax(t *testing.T) {
 	g := hwmonGPU(t, map[string]string{"name": "i915\n", "power1_rated_max": "35000000\n"})
 	assertSamples(t, NewHwmon([]discovery.GPU{g}), []string{
-		`intel_gpu_hwmon_power_max_watts{` + i915Labels + `,channel="1_rated",hwmon="i915"} 35`,
+		`intel_gpu_hwmon_power_rated_max_watts{` + i915Labels + `,channel="1",hwmon="i915"} 35`,
+	})
+}
+
+func TestHwmonUpdateMaxAndRatedMaxTogether(t *testing.T) {
+	g := hwmonGPU(t, map[string]string{
+		"name":             "i915\n",
+		"power1_max":       "28000000\n",
+		"power1_rated_max": "35000000\n",
+	})
+	assertSamples(t, NewHwmon([]discovery.GPU{g}), []string{
+		`intel_gpu_hwmon_power_max_watts{` + i915Labels + `,channel="1",hwmon="i915"} 28`,
+		`intel_gpu_hwmon_power_rated_max_watts{` + i915Labels + `,channel="1",hwmon="i915"} 35`,
 	})
 }
 

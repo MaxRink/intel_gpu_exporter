@@ -174,6 +174,26 @@ func TestDiscoverXeTilesAndGTs(t *testing.T) {
 	}
 }
 
+func TestDiscoverXeTilesSortNumerically(t *testing.T) {
+	root := buildSysfs(t, cardSpec{
+		name: "card1", pciAddr: "0000:03:00.0", vendor: "0x8086",
+		deviceID: "0x56a0", driver: "xe", tiles: 11, gtsPer: 1,
+	})
+	gpus, err := Discover(root)
+	if err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	tiles := gpus[0].Tiles
+	if len(tiles) != 11 {
+		t.Fatalf("got %d tiles, want 11", len(tiles))
+	}
+	for ti, tile := range tiles {
+		if filepath.Base(tile.Path) != "tile"+strconv.Itoa(ti) {
+			t.Errorf("tile Index %d points at %q, want tile%d", tile.Index, filepath.Base(tile.Path), ti)
+		}
+	}
+}
+
 func TestDiscoverSkipsNonIntelAndConnectors(t *testing.T) {
 	root := buildSysfs(t,
 		cardSpec{name: "card0", pciAddr: "0000:01:00.0", vendor: "0x10de", deviceID: "0x2484", driver: "nvidia"},
