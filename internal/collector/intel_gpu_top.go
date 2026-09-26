@@ -24,6 +24,7 @@ type IntelGPUTop struct {
 	mu     sync.Mutex
 	latest *gpuTopSample
 	last   atomic.Int64
+	exited atomic.Bool
 	cancel context.CancelFunc
 
 	freqReq *prometheus.Desc
@@ -48,7 +49,7 @@ type gpuTopSample struct {
 	RC6 struct {
 		Value float64 `json:"value"`
 	} `json:"rc6"`
-	Power map[string]float64 `json:"power"`
+	Power map[string]any `json:"power"`
 	IMCBW struct {
 		Reads  float64 `json:"reads"`
 		Writes float64 `json:"writes"`
@@ -115,10 +116,21 @@ func (c *IntelGPUTop) Start(parent context.Context) error {
 		return err
 	}
 	c.log.Info("intel_gpu_top started", "pid", cmd.Process.Pid, "bin", c.binPath)
-	go c.consume(stdout)
-	go c.drainStderr(stderr)
+	var readers sync.WaitGroup
+	readers.Add(2)
 	go func() {
+		defer readers.Done()
+		c.consume(stdout)
+		_, _ = io.Copy(io.Discard, stdout)
+	}()
+	go func() {
+		defer readers.Done()
+		c.drainStderr(stderr)
+	}()
+	go func() {
+		readers.Wait()
 		err := cmd.Wait()
+		c.exited.Store(true)
 		samples := c.last.Load() != 0
 		c.log.Warn("intel_gpu_top exited",
 			"err", err, "got_any_sample", samples,
@@ -175,6 +187,9 @@ func (c *IntelGPUTop) Update(ctx context.Context, ch chan<- prometheus.Metric) e
 	if s == nil {
 		return fmt.Errorf("no intel_gpu_top sample yet")
 	}
+	if c.exited.Load() {
+		return fmt.Errorf("intel_gpu_top exited")
+	}
 	const src = "intel_gpu_top"
 	ch <- prometheus.MustNewConstMetric(c.freqReq, prometheus.GaugeValue, s.Frequency.Requested, src)
 	ch <- prometheus.MustNewConstMetric(c.freqAct, prometheus.GaugeValue, s.Frequency.Actual, src)
@@ -183,7 +198,11 @@ func (c *IntelGPUTop) Update(ctx context.Context, ch chan<- prometheus.Metric) e
 	ch <- prometheus.MustNewConstMetric(c.imcW, prometheus.GaugeValue, s.IMCBW.Writes, src)
 	ch <- prometheus.MustNewConstMetric(c.irqs, prometheus.GaugeValue, s.Interrupts.Count, src)
 	for rail, v := range s.Power {
-		ch <- prometheus.MustNewConstMetric(c.power, prometheus.GaugeValue, v, src, rail)
+		f, ok := v.(float64)
+		if !ok {
+			continue
+		}
+		ch <- prometheus.MustNewConstMetric(c.power, prometheus.GaugeValue, f, src, rail)
 	}
 	for name, e := range s.Engines {
 		ch <- prometheus.MustNewConstMetric(c.engine, prometheus.GaugeValue, e.Busy, src, name, "busy")
