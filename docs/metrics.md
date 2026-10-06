@@ -9,6 +9,7 @@ Common labels: `card`, `pci`, `device`, `driver`.
 | Metric                                              | Source                                |
 |-----------------------------------------------------|---------------------------------------|
 | `intel_gpu_info{…}` (constant 1)                    | static metadata: subsystem, revision, NUMA, modalias, tiles |
+| `intel_gpu_runtime_suspended`                       | PCI `power/runtime_status`; while 1, the i915/xe sysfs, hwmon, PCIe and memory sources replay their last samples instead of waking the GPU |
 | `intel_gpu_i915_frequency_{actual,requested,min,max,rp0,rpn,boost}_mhz` (label `gt`) | i915 sysfs (`gt_*_freq_mhz` + per-GT `gt/gtN/rps_*`) |
 | `intel_gpu_i915_rc6_residency_ms`                   | `cardN/power/rc6_residency_ms`        |
 | `intel_gpu_xe_frequency_{actual,requested,rp0,rpa,rpn}_mhz` (labels `tile`, `gt`) | xe sysfs `tile*/gt*/freq0/` |
