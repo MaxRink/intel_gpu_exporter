@@ -84,7 +84,9 @@ func main() {
 		collector.NewLevelZero(log),
 	}
 	if cfg.EnableFdinfo {
-		sources = append(sources, collector.NewFdinfo(cfg.ProcRoot, cfg.FdinfoTopN))
+		fd := collector.NewFdinfo(cfg.ProcRoot, cfg.FdinfoTopN)
+		fd.Rescan = cfg.FdinfoRescan
+		sources = append(sources, fd)
 	}
 	var pmu *collector.PMU
 	if cfg.EnablePMU {

@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -17,6 +19,13 @@ import (
 type Fdinfo struct {
 	procRoot string
 	topN     int
+
+	// Rescan bounds the full /proc walk: in between, only PIDs that held a
+	// DRM fd at the last walk are re-read (0 = walk on every scrape).
+	Rescan   time.Duration
+	mu       sync.Mutex
+	lastScan time.Time
+	known    []string
 
 	engineTime        *prometheus.Desc
 	engineCycles      *prometheus.Desc
@@ -98,21 +107,27 @@ func newProcData() *procData {
 }
 
 func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error {
-	entries, err := os.ReadDir(c.procRoot)
-	if err != nil {
-		return err
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	full := c.Rescan <= 0 || time.Since(c.lastScan) >= c.Rescan
+	pids := c.known
+	if full {
+		entries, err := os.ReadDir(c.procRoot)
+		if err != nil {
+			return err
+		}
+		pids = pids[:0:0]
+		for _, e := range entries {
+			if _, err := strconv.Atoi(e.Name()); err == nil && e.IsDir() {
+				pids = append(pids, e.Name())
+			}
+		}
 	}
 
 	procs := map[procKey]*procData{}
+	seen := map[string]bool{}
 
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		pid := e.Name()
-		if _, err := strconv.Atoi(pid); err != nil {
-			continue
-		}
+	for _, pid := range pids {
 		comm := readComm(filepath.Join(c.procRoot, pid, "comm"))
 		fdinfoDir := filepath.Join(c.procRoot, pid, "fdinfo")
 		fds, err := os.ReadDir(fdinfoDir)
@@ -134,6 +149,7 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 			if driver != "i915" && driver != "xe" {
 				continue
 			}
+			seen[pid] = true
 			key := procKey{pid: pid, comm: comm, driver: driver, pci: data["drm-pdev"]}
 			pd, ok := procs[key]
 			if !ok {
@@ -158,6 +174,16 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 				}
 			}
 		}
+	}
+
+	if full {
+		c.known = c.known[:0]
+		for _, pid := range pids {
+			if seen[pid] {
+				c.known = append(c.known, pid)
+			}
+		}
+		c.lastScan = time.Now()
 	}
 
 	keys := topNByActivity(procs, c.topN)

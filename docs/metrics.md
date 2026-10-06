@@ -30,7 +30,7 @@ Common labels: `card`, `pci`, `device`, `driver`.
 
 ## Per-process gauges (DRM fdinfo)
 
-Labels: `pci`, `driver`, `pid`, `comm`, `engine` or `region`. Capped at `--collector.fdinfo.top-n` busiest processes.
+Labels: `pci`, `driver`, `pid`, `comm`, `engine` or `region`. Capped at `--collector.fdinfo.top-n` busiest processes. `--collector.fdinfo.rescan-interval` (e.g. `60s`) limits the full `/proc` walk; in between only PIDs that held a DRM fd are re-read, so new clients appear within that interval.
 
 - `intel_gpu_client_engine_time_seconds_total`
 - `intel_gpu_client_engine_{cycles,total_cycles}_total` from the xe drm-cycles and drm-total-cycles keys

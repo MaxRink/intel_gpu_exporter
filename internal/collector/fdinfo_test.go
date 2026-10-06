@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -337,5 +338,22 @@ func TestFdinfoUpdateSkipsNonDRMFds(t *testing.T) {
 	want := `intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="render",pci="0000:00:02.0",pid="5"} 9.204536832`
 	if !slices.Contains(samples(t, NewFdinfo(root, 0)), want) {
 		t.Errorf("fd 3 (/dev/null) must be skipped, fd 4 counted once; got %v", samples(t, NewFdinfo(root, 0)))
+	}
+}
+
+func TestFdinfoRescanReadsOnlyKnownClientsInBetween(t *testing.T) {
+	root := fakeProcRoot(t, procSpec{pid: "7", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt"}})
+	c := NewFdinfo(root, 0)
+	c.Rescan = time.Hour
+	_ = samples(t, c) // full walk: pid 7 becomes known
+	writeFiles(t, filepath.Join(root, "9", "fdinfo"), map[string]string{"3": testdataFile(t, "fdinfo_i915.txt")})
+	writeFiles(t, filepath.Join(root, "9"), map[string]string{"comm": "new\n"})
+	got := strings.Join(samples(t, c), "\n")
+	if !strings.Contains(got, `pid="7"`) || strings.Contains(got, `pid="9"`) {
+		t.Fatalf("between rescans want only known pid 7, got %s", got)
+	}
+	c.lastScan = time.Time{}
+	if got := strings.Join(samples(t, c), "\n"); !strings.Contains(got, `pid="9"`) {
+		t.Fatalf("a rescan must pick up pid 9, got %s", got)
 	}
 }
