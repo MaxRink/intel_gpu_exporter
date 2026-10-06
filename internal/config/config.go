@@ -13,6 +13,7 @@ type Config struct {
 	SysfsRoot       string
 	ProcRoot        string
 	HwmonRoot       string
+	DevRoot         string
 	ScrapeTimeout   time.Duration
 	EnableFdinfo    bool
 	FdinfoTopN      int
@@ -40,6 +41,7 @@ func ParseArgs(name string, args []string) (*Config, error) {
 	fs.StringVar(&c.MetricsPath, "web.telemetry-path", "/metrics", "path under which to expose metrics")
 	fs.StringVar(&c.SysfsRoot, "path.sysfs", "/sys", "sysfs mountpoint")
 	fs.StringVar(&c.ProcRoot, "path.procfs", "/proc", "procfs mountpoint")
+	fs.StringVar(&c.DevRoot, "path.dev", "/dev", "devfs mountpoint (i915 render nodes for memory region queries)")
 	fs.StringVar(&c.HwmonRoot, "path.hwmon", "/sys/class/hwmon", "hwmon root")
 	fs.DurationVar(&c.ScrapeTimeout, "scrape.timeout", 5*time.Second, "maximum time a single scrape may take")
 	fs.BoolVar(&c.EnableFdinfo, "collector.fdinfo", true, "enable per-process DRM fdinfo collector")

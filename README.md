@@ -21,6 +21,11 @@ sudo chmod +x /usr/local/bin/intel_gpu_exporter
 To run it as a service, docs/systemd.md has a reference unit along with the service user it expects.
 Building from source with make build puts the binary in bin/.
 
+### Container image (MaxRink fork)
+
+Tags pushed as `v*` build `ghcr.io/maxrink/intel_gpu_exporter:<tag>` (distroless static, linux/amd64 and arm64) via `.github/workflows/image.yml`.
+Least-privilege example: run as root with `--cap-drop ALL --cap-add PERFMON --read-only --device /dev/dri/renderD128`, and add `--pid host --cap-add SYS_PTRACE` only for the per-process fdinfo collector.
+
 ## Configuration
 
 Everything is set with command-line flags, and intel_gpu_exporter -h lists each one with its default.

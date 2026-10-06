@@ -112,11 +112,12 @@ func TestIntelGPUTopConsumeTerminatedArray(t *testing.T) {
 	}
 }
 
-func TestIntelGPUTopConsumeRejectsNonArray(t *testing.T) {
+// A bare object stream is accepted on purpose: the splitter does not require
+// the surrounding array (see consume).
+func TestIntelGPUTopConsumeRejectsNonJSON(t *testing.T) {
 	for name, input := range map[string]string{
-		"object": `{"frequency":{"actual":1}}`,
-		"empty":  ``,
-		"junk":   `not json at all`,
+		"empty": ``,
+		"junk":  `not json at all`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := newTestGPUTop(t, "intel_gpu_top")
@@ -336,4 +337,13 @@ func TestIntelGPUTopAvailable(t *testing.T) {
 
 func TestIntelGPUTopStopWithoutStart(t *testing.T) {
 	newTestGPUTop(t, "intel_gpu_top").Stop()
+}
+
+func TestIntelGPUTopConsumeToleratesMalformedAndUnseparatedSamples(t *testing.T) {
+	c := newTestGPUTop(t, "intel_gpu_top")
+	stream := "[\n{\"rc6\":{\"value\":1}}\n{\"rc6\":{\"value\":oops}},\n{\"engines\":{\"a}\\\"{\":{\"busy\":2}},\"rc6\":{\"value\":3}}\n"
+	c.consume(strings.NewReader(stream))
+	if c.latest == nil || c.latest.RC6.Value != 3 || c.latest.Engines["a}\"{"].Busy != 2 {
+		t.Fatalf("latest = %+v, want the third sample despite the malformed second one", c.latest)
+	}
 }

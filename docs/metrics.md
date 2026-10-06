@@ -23,6 +23,8 @@ Common labels: `card`, `pci`, `device`, `driver`.
 | `intel_gpu_pcie_{current,max}_generation`           | derived from link speed (Gen1–6)      |
 | `intel_gpu_memory_lmem_total_bytes`                 | i915 `lmem_total_bytes` (when published) |
 | `intel_gpu_memory_vram_total_bytes` (label `tile`)  | xe `physical_vram_size_bytes`         |
+| `intel_gpu_memory_region_{total,free}_bytes` (label `region`: `local0` = VRAM, `system0`) | i915 `DRM_I915_QUERY_MEMORY_REGIONS` on the render node; free needs `CAP_PERFMON` (otherwise equals total) |
+| `intel_gpu_i915_throttle_reason` (labels `gt`, `reason`; `status` = any) | i915 sysfs `gt/gtN/throttle_reason_*` |
 | `intel_gpu_engine_info{capabilities, known_capabilities}` (constant 1) | i915 `engine/<name>/` |
 | `intel_gpu_engine_{heartbeat_interval_ms, preempt_timeout_ms, stop_timeout_ms, timeslice_duration_ms, max_busywait_duration_ns}` | same |
 

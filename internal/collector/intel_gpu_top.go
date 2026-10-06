@@ -152,31 +152,49 @@ func (c *IntelGPUTop) Stop() {
 	}
 }
 
+// consume splits intel_gpu_top -J output into top-level JSON objects by
+// brace depth, ignoring the array brackets and commas between samples. A
+// json.Decoder cannot recover from one malformed sample (it would spin on the
+// same error), and some intel-gpu-tools versions omit the separators.
 func (c *IntelGPUTop) consume(r io.Reader) {
-
 	br := bufio.NewReader(r)
-	dec := json.NewDecoder(br)
-	if t, err := dec.Token(); err != nil {
-		c.log.Warn("intel_gpu_top read opening token", "err", err)
-		return
-	} else if d, ok := t.(json.Delim); !ok || d != '[' {
-		c.log.Warn("intel_gpu_top unexpected opening token", "token", t)
-		return
-	}
-	for dec.More() {
-		var s gpuTopSample
-		if err := dec.Decode(&s); err != nil {
-			if err == io.EOF {
-				return
-			}
-			c.log.Warn("intel_gpu_top decode", "err", err)
-			time.Sleep(500 * time.Millisecond)
+	var obj []byte
+	depth, inStr, esc := 0, false, false
+	for {
+		b, err := br.ReadByte()
+		if err != nil {
+			return
+		}
+		if depth == 0 && b != '{' {
 			continue
 		}
-		c.mu.Lock()
-		c.latest = &s
-		c.mu.Unlock()
-		c.last.Store(time.Now().UnixNano())
+		obj = append(obj, b)
+		switch {
+		case esc:
+			esc = false
+		case inStr && b == '\\':
+			esc = true
+		case b == '"':
+			inStr = !inStr
+		case inStr:
+		case b == '{':
+			depth++
+		case b == '}':
+			depth--
+		}
+		if depth > 0 {
+			continue
+		}
+		var s gpuTopSample
+		if err := json.Unmarshal(obj, &s); err != nil {
+			c.log.Warn("intel_gpu_top decode", "err", err)
+		} else {
+			c.mu.Lock()
+			c.latest = &s
+			c.mu.Unlock()
+			c.last.Store(time.Now().UnixNano())
+		}
+		obj = obj[:0]
 	}
 }
 
