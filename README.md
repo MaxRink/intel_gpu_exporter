@@ -23,7 +23,7 @@ Building from source with make build puts the binary in bin/.
 
 ### Container image (MaxRink fork)
 
-Tags pushed as `v*` build `ghcr.io/maxrink/intel_gpu_exporter:<tag>` (distroless static, linux/amd64 and arm64) via `.github/workflows/image.yml`.
+Tags pushed as `v*` build `ghcr.io/maxrink/intel_gpu_exporter:<tag>` (distroless base-nossl, glibc for purego, linux/amd64 and arm64) via `.github/workflows/image.yml`.
 Least-privilege example: run as root with `--cap-drop ALL --cap-add PERFMON --read-only --device /dev/dri/renderD128`, and add `--pid host --cap-add SYS_PTRACE` only for the per-process fdinfo collector.
 
 ## Configuration
