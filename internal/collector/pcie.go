@@ -21,12 +21,19 @@ type PCIe struct {
 	maxWidth *prometheus.Desc
 	curGen   *prometheus.Desc
 	maxGen   *prometheus.Desc
+	upSpeed  *prometheus.Desc
+	upWidth  *prometheus.Desc
+	upMaxSp  *prometheus.Desc
+	upMaxW   *prometheus.Desc
 }
 
 func NewPCIe(gpus []discovery.GPU) *PCIe {
 	lbls := CommonLabels()
 	d := func(name, help string) *prometheus.Desc {
 		return prometheus.NewDesc(prometheus.BuildFQName(Namespace, "pcie", name), help, lbls, nil)
+	}
+	u := func(name, help string) *prometheus.Desc {
+		return prometheus.NewDesc(prometheus.BuildFQName(Namespace, "pcie", name), help, append(CommonLabels(), "hop", "port"), nil)
 	}
 	return &PCIe{
 		gpus:     gpus,
@@ -36,6 +43,10 @@ func NewPCIe(gpus []discovery.GPU) *PCIe {
 		maxWidth: d("max_link_width", "Maximum supported PCIe link width (lanes)."),
 		curGen:   d("current_generation", "Current PCIe generation (1..6) derived from link speed."),
 		maxGen:   d("max_generation", "Maximum supported PCIe generation."),
+		upSpeed:  u("upstream_current_link_speed_gtps", "Current link speed of each upstream port (hop 1 = the GPU's parent; discrete cards sit behind an internal switch, so the slot link is a higher hop)."),
+		upWidth:  u("upstream_current_link_width", "Current link width of each upstream port."),
+		upMaxSp:  u("upstream_max_link_speed_gtps", "Maximum link speed of each upstream port."),
+		upMaxW:   u("upstream_max_link_width", "Maximum link width of each upstream port."),
 	}
 }
 
@@ -66,6 +77,34 @@ func (c *PCIe) Update(ctx context.Context, ch chan<- prometheus.Metric) error {
 		}
 		if v, err := sysutil.ReadFloat64(filepath.Join(g.DevicePath, "max_link_width")); err == nil {
 			ch <- prometheus.MustNewConstMetric(c.maxWidth, prometheus.GaugeValue, v, lv...)
+		}
+		if g.DevicePath == "" {
+			continue
+		}
+		dev, err := filepath.EvalSymlinks(g.DevicePath)
+		if err != nil {
+			continue
+		}
+		for hop, p := 1, filepath.Dir(dev); hop <= 8; hop, p = hop+1, filepath.Dir(p) {
+			sp, err := sysutil.ReadString(filepath.Join(p, "current_link_speed"))
+			if err != nil {
+				break
+			}
+			ulv := append(append([]string{}, lv...), strconv.Itoa(hop), filepath.Base(p))
+			if v, _, ok := parseLinkSpeed(sp); ok {
+				ch <- prometheus.MustNewConstMetric(c.upSpeed, prometheus.GaugeValue, v, ulv...)
+			}
+			if s, err := sysutil.ReadString(filepath.Join(p, "max_link_speed")); err == nil {
+				if v, _, ok := parseLinkSpeed(s); ok {
+					ch <- prometheus.MustNewConstMetric(c.upMaxSp, prometheus.GaugeValue, v, ulv...)
+				}
+			}
+			if v, err := sysutil.ReadFloat64(filepath.Join(p, "current_link_width")); err == nil {
+				ch <- prometheus.MustNewConstMetric(c.upWidth, prometheus.GaugeValue, v, ulv...)
+			}
+			if v, err := sysutil.ReadFloat64(filepath.Join(p, "max_link_width")); err == nil {
+				ch <- prometheus.MustNewConstMetric(c.upMaxW, prometheus.GaugeValue, v, ulv...)
+			}
 		}
 	}
 	return nil

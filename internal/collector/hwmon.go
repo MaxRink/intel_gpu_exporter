@@ -17,6 +17,7 @@ type Hwmon struct {
 	powerMax    *prometheus.Desc
 	powerRated  *prometheus.Desc
 	powerCrit   *prometheus.Desc
+	powerWindow *prometheus.Desc
 	energy      *prometheus.Desc
 	temperature *prometheus.Desc
 	fan         *prometheus.Desc
@@ -33,6 +34,7 @@ func NewHwmon(gpus []discovery.GPU) *Hwmon {
 		gpus:        gpus,
 		powerMax:    d("power_max_watts", "Sustained power limit (PL1) reported by hwmon."),
 		powerRated:  d("power_rated_max_watts", "Default/rated TDP power limit."),
+		powerWindow: d("power_max_interval_seconds", "Averaging window (tau) of the sustained power limit (PL1)."),
 		powerCrit:   d("power_crit_watts", "Critical power limit."),
 		energy:      d("energy_joules_total", "Cumulative energy consumption."),
 		temperature: d("temperature_celsius", "Device temperature."),
@@ -63,6 +65,9 @@ func (c *Hwmon) Update(ctx context.Context, ch chan<- prometheus.Metric) error {
 			for _, f := range files {
 				name := filepath.Base(f)
 				switch {
+				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_max_interval"):
+					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_max_interval")
+					c.emitScaled(ch, c.powerWindow, f, 1e-3, base, channel)
 				case strings.HasPrefix(name, "power") && strings.HasSuffix(name, "_rated_max"):
 					channel := strings.TrimSuffix(strings.TrimPrefix(name, "power"), "_rated_max")
 					c.emitScaled(ch, c.powerRated, f, 1e-6, base, channel)

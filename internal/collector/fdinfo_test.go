@@ -201,6 +201,9 @@ func TestFdinfoUpdate(t *testing.T) {
 	c := NewFdinfo(root, 0)
 	assertSamples(t, c, []string{
 		`intel_gpu_client_dropped_processes 0`,
+		`intel_gpu_client_engine_capacity{comm="ffmpeg",driver="i915",engine="video",pci="0000:00:02.0",pid="1042"} 2`,
+		`intel_gpu_client_memory_active_bytes{comm="ffmpeg",driver="i915",pci="0000:00:02.0",pid="1042",region="system"} 0`,
+		`intel_gpu_client_memory_purgeable_bytes{comm="ffmpeg",driver="i915",pci="0000:00:02.0",pid="1042",region="system"} 0`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="copy",pci="0000:00:02.0",pid="1042"} 0`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="render",pci="0000:00:02.0",pid="1042"} 9.204536832`,
 		`intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="video",pci="0000:00:02.0",pid="1042"} 1.024`,

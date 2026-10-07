@@ -20,6 +20,7 @@ type Config struct {
 	FdinfoRescan         time.Duration
 	FdinfoContainersOnly bool
 	FdinfoDrmClients     string
+	DebugfsDir           string
 	EnableGpuTop         bool
 	EnablePMU            bool
 	IntelGpuTopPath      string
@@ -51,6 +52,7 @@ func ParseArgs(name string, args []string) (*Config, error) {
 	fs.IntVar(&c.FdinfoTopN, "collector.fdinfo.top-n", 32, "fdinfo: cap per-process series at the top N processes by aggregate engine time (0 = unlimited)")
 	fs.DurationVar(&c.FdinfoRescan, "collector.fdinfo.rescan-interval", 0, "fdinfo: walk all of /proc at most this often and re-read only known GPU clients in between (0 = every scrape)")
 	fs.BoolVar(&c.FdinfoContainersOnly, "collector.fdinfo.containers-only", false, "fdinfo: only read processes in a container cgroup (checked via /proc/<pid>/cgroup before any ptrace-checked /proc access)")
+	fs.StringVar(&c.DebugfsDir, "collector.debugfs.path", "", "DRM debugfs directory (host /sys/kernel/debug/dri bind-mounted read-only): GuC/HuC firmware state and RPe frequency; empty = off")
 	fs.StringVar(&c.FdinfoDrmClients, "collector.fdinfo.drm-clients", "", "fdinfo: read only the PIDs listed in <dir>/*/clients (DRM debugfs, e.g. /sys/kernel/debug/dri bind-mounted read-only) instead of walking /proc")
 	fs.BoolVar(&c.EnableGpuTop, "collector.intel-gpu-top", true, "enable intel_gpu_top fallback collector when PMU is unavailable")
 	fs.BoolVar(&c.EnablePMU, "collector.pmu", true, "enable i915/xe PMU collector via perf_event_open")

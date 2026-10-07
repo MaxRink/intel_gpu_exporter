@@ -44,6 +44,9 @@ type Fdinfo struct {
 	memTotal          *prometheus.Desc
 	memRes            *prometheus.Desc
 	memShared         *prometheus.Desc
+	memPurgeable      *prometheus.Desc
+	memActive         *prometheus.Desc
+	engineCapacity    *prometheus.Desc
 	dropped           *prometheus.Desc
 }
 
@@ -83,6 +86,21 @@ func NewFdinfo(procRoot string, topN int) *Fdinfo {
 			"Shared memory by the client, per region.",
 			memLabels, nil,
 		),
+		memPurgeable: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "client", "memory_purgeable_bytes"),
+			"Memory of the client the kernel may discard (drm-purgeable-*), per region.",
+			memLabels, nil,
+		),
+		memActive: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "client", "memory_active_bytes"),
+			"Memory of the client in use by submitted GPU work (drm-active-*), per region.",
+			memLabels, nil,
+		),
+		engineCapacity: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "client", "engine_capacity"),
+			"Engines of this class visible to the client (drm-engine-capacity-*; busy time is summed over them, so divide by it for utilisation).",
+			engineLabels, nil,
+		),
 		dropped: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "client", "dropped_processes"),
 			"Number of GPU-using processes whose metrics were dropped due to the --collector.fdinfo.top-n cap.",
@@ -104,6 +122,9 @@ type procData struct {
 	total       map[string]uint64
 	res         map[string]uint64
 	shared      map[string]uint64
+	purgeable   map[string]uint64
+	active      map[string]uint64
+	capacity    map[string]uint64
 }
 
 func newProcData() *procData {
@@ -114,6 +135,9 @@ func newProcData() *procData {
 		total:       map[string]uint64{},
 		res:         map[string]uint64{},
 		shared:      map[string]uint64{},
+		purgeable:   map[string]uint64{},
+		active:      map[string]uint64{},
+		capacity:    map[string]uint64{},
 	}
 }
 
@@ -176,6 +200,7 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 			for k, v := range data {
 				switch {
 				case strings.HasPrefix(k, "drm-engine-capacity-"):
+					pd.capacity[strings.TrimPrefix(k, "drm-engine-capacity-")] = parseNs(v)
 				case strings.HasPrefix(k, "drm-engine-"):
 					pd.engine[strings.TrimPrefix(k, "drm-engine-")] += parseNs(v)
 				case strings.HasPrefix(k, "drm-cycles-"):
@@ -188,6 +213,10 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 					pd.res[strings.TrimPrefix(k, "drm-resident-")] += parseBytes(v)
 				case strings.HasPrefix(k, "drm-shared-"):
 					pd.shared[strings.TrimPrefix(k, "drm-shared-")] += parseBytes(v)
+				case strings.HasPrefix(k, "drm-purgeable-"):
+					pd.purgeable[strings.TrimPrefix(k, "drm-purgeable-")] += parseBytes(v)
+				case strings.HasPrefix(k, "drm-active-"):
+					pd.active[strings.TrimPrefix(k, "drm-active-")] += parseBytes(v)
 				}
 			}
 		}
@@ -234,6 +263,18 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 		for region, v := range pd.shared {
 			ch <- prometheus.MustNewConstMetric(c.memShared, prometheus.GaugeValue,
 				float64(v), k.pci, k.driver, k.pid, k.comm, region)
+		}
+		for region, v := range pd.purgeable {
+			ch <- prometheus.MustNewConstMetric(c.memPurgeable, prometheus.GaugeValue,
+				float64(v), k.pci, k.driver, k.pid, k.comm, region)
+		}
+		for region, v := range pd.active {
+			ch <- prometheus.MustNewConstMetric(c.memActive, prometheus.GaugeValue,
+				float64(v), k.pci, k.driver, k.pid, k.comm, region)
+		}
+		for engine, v := range pd.capacity {
+			ch <- prometheus.MustNewConstMetric(c.engineCapacity, prometheus.GaugeValue,
+				float64(v), k.pci, k.driver, k.pid, k.comm, engine)
 		}
 	}
 	ch <- prometheus.MustNewConstMetric(c.dropped, prometheus.GaugeValue, float64(dropped))

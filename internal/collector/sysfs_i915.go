@@ -22,6 +22,14 @@ type I915Sysfs struct {
 	freqRP0 *prometheus.Desc
 	freqRPn *prometheus.Desc
 	freqBst *prometheus.Desc
+	freqRP1 *prometheus.Desc
+	freqPun *prometheus.Desc
+	medRP0  *prometheus.Desc
+	medRPn  *prometheus.Desc
+	medFact *prometheus.Desc
+	rc6On   *prometheus.Desc
+	slpcEff *prometheus.Desc
+	errSt   *prometheus.Desc
 	rc6     *prometheus.Desc
 	thrott  *prometheus.Desc
 }
@@ -40,6 +48,17 @@ func NewI915Sysfs(gpus []discovery.GPU) *I915Sysfs {
 		freqRP0: d("frequency_rp0", "Hardware maximum (RP0) frequency.", "mhz"),
 		freqRPn: d("frequency_rpn", "Hardware minimum (RPn) frequency.", "mhz"),
 		freqBst: d("frequency_boost", "Boost frequency hint (per-GT only).", "mhz"),
+		freqRP1: d("frequency_rp1", "Hardware nominal (RP1) frequency.", "mhz"),
+		freqPun: d("frequency_punit_request", "Frequency last requested from the PUnit (punit_req_freq_mhz).", "mhz"),
+		medRP0:  d("media_frequency_rp0", "Media engine maximum (RP0) frequency.", "mhz"),
+		medRPn:  d("media_frequency_rpn", "Media engine minimum (RPn) frequency.", "mhz"),
+		medFact: d("media_frequency_factor", "Media/GT frequency ratio (media_freq_factor x scale; 0 = dynamic).", "ratio"),
+		rc6On:   d("rc6_enabled", "1 if RC6 power gating is enabled for the GT.", "bool"),
+		slpcEff: d("slpc_ignore_efficient_frequency", "1 if SLPC ignores the efficient (RPe) frequency floor.", "bool"),
+		errSt: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "i915", "error_state_present"),
+			"1 while the driver holds a captured GPU error state (hang/reset); card/error.", CommonLabels(), nil,
+		),
 		thrott: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "i915", "throttle_reason"),
 			"1 while the GT frequency is throttled for this reason (gt/gtN/throttle_reason_*; reason status = any).",
@@ -103,6 +122,17 @@ func (c *I915Sysfs) Update(ctx context.Context, ch chan<- prometheus.Metric) err
 			emit(c.freqRP0, "rps_RP0_freq_mhz")
 			emit(c.freqRPn, "rps_RPn_freq_mhz")
 			emit(c.freqBst, "rps_boost_freq_mhz")
+			emit(c.freqRP1, "rps_RP1_freq_mhz")
+			emit(c.freqPun, "punit_req_freq_mhz")
+			emit(c.medRP0, "media_RP0_freq_mhz")
+			emit(c.medRPn, "media_RPn_freq_mhz")
+			emit(c.rc6On, "rc6_enable")
+			emit(c.slpcEff, "slpc_ignore_eff_freq")
+			if f, err := sysutil.ReadFloat64(filepath.Join(gt.Path, "media_freq_factor")); err == nil {
+				if sc, err := sysutil.ReadFloat64(filepath.Join(gt.Path, "media_freq_factor.scale")); err == nil {
+					ch <- prometheus.MustNewConstMetric(c.medFact, prometheus.GaugeValue, f*sc, lv...)
+				}
+			}
 			files, _ := filepath.Glob(filepath.Join(gt.Path, "throttle_reason_*"))
 			for _, f := range files {
 				if v, err := sysutil.ReadFloat64(f); err == nil {
@@ -112,6 +142,13 @@ func (c *I915Sysfs) Update(ctx context.Context, ch chan<- prometheus.Metric) err
 			}
 		}
 
+		if s, err := sysutil.ReadString(filepath.Join(g.DRMPath, "error")); err == nil {
+			v := 1.0
+			if strings.HasPrefix(s, "No error state collected") {
+				v = 0
+			}
+			ch <- prometheus.MustNewConstMetric(c.errSt, prometheus.GaugeValue, v, base...)
+		}
 		if v, err := sysutil.ReadFloat64(filepath.Join(g.DRMPath, "power", "rc6_residency_ms")); err == nil {
 			ch <- prometheus.MustNewConstMetric(c.rc6, prometheus.CounterValue, v, base...)
 		}

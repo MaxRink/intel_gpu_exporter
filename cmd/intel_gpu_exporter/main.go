@@ -81,6 +81,7 @@ func main() {
 		collector.NewIdleGate(collector.NewHwmon(gpus), gpus),
 		collector.NewIdleGate(collector.NewPCIe(gpus), gpus),
 		collector.NewIdleGate(mem, gpus),
+		collector.NewIdleGate(collector.NewDebugfs(gpus, cfg.DebugfsDir), gpus),
 		collector.NewEngines(gpus),
 		collector.NewLevelZero(log),
 	}
