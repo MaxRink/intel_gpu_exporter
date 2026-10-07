@@ -357,3 +357,55 @@ func TestFdinfoRescanReadsOnlyKnownClientsInBetween(t *testing.T) {
 		t.Fatalf("a rescan must pick up pid 9, got %s", got)
 	}
 }
+
+func TestFdinfoContainersOnlySkipsHostPIDs(t *testing.T) {
+	id := strings.Repeat("ab", 32)
+	root := fakeProcRoot(t,
+		procSpec{pid: "10", comm: "sshd", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "11", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "12", comm: "python3", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "13", comm: "nocgroup", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "14", comm: "shim", fdinfos: []string{"fdinfo_i915.txt"}},
+	)
+	writeFiles(t, filepath.Join(root, "10"), map[string]string{"cgroup": "0::/../../system.slice/ssh.service\n"})
+	// Docker systemd driver seen from a private cgroup namespace, and cgroupfs driver.
+	writeFiles(t, filepath.Join(root, "11"), map[string]string{"cgroup": "0::/../../system.slice/docker-" + id + ".scope\n"})
+	writeFiles(t, filepath.Join(root, "12"), map[string]string{"cgroup": "0::/docker/" + id + "\n"})
+	writeFiles(t, filepath.Join(root, "14"), map[string]string{"cgroup": "0::/system.slice/containerd.service\n"})
+
+	c := NewFdinfo(root, 0)
+	c.ContainersOnly = true
+	got := strings.Join(samples(t, c), "\n")
+	for _, pid := range []string{"11", "12"} {
+		if !strings.Contains(got, `pid="`+pid+`"`) {
+			t.Errorf("container pid %s missing:\n%s", pid, got)
+		}
+	}
+	for _, pid := range []string{"10", "13", "14"} {
+		if strings.Contains(got, `pid="`+pid+`"`) {
+			t.Errorf("non-container pid %s must be skipped:\n%s", pid, got)
+		}
+	}
+
+	c.ContainersOnly = false
+	if got := strings.Join(samples(t, c), "\n"); !strings.Contains(got, `pid="10"`) {
+		t.Errorf("without the flag every pid is read, got:\n%s", got)
+	}
+}
+
+func TestFdinfoContainersOnlyRechecksKnownPIDs(t *testing.T) {
+	id := strings.Repeat("cd", 32)
+	root := fakeProcRoot(t, procSpec{pid: "20", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt"}})
+	writeFiles(t, filepath.Join(root, "20"), map[string]string{"cgroup": "0::/system.slice/docker-" + id + ".scope\n"})
+	c := NewFdinfo(root, 0)
+	c.ContainersOnly = true
+	c.Rescan = time.Hour
+	if got := strings.Join(samples(t, c), "\n"); !strings.Contains(got, `pid="20"`) {
+		t.Fatalf("pid 20 must be known after the full walk, got:\n%s", got)
+	}
+	// PID reuse by a host process between rescans: skipped without a full walk.
+	writeFiles(t, filepath.Join(root, "20"), map[string]string{"cgroup": "0::/init.scope\n"})
+	if got := strings.Join(samples(t, c), "\n"); strings.Contains(got, `pid="20"`) {
+		t.Fatalf("a known pid that left its container must be skipped, got:\n%s", got)
+	}
+}

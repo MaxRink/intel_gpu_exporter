@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,10 +23,15 @@ type Fdinfo struct {
 
 	// Rescan bounds the full /proc walk: in between, only PIDs that held a
 	// DRM fd at the last walk are re-read (0 = walk on every scrape).
-	Rescan   time.Duration
-	mu       sync.Mutex
-	lastScan time.Time
-	known    []string
+	Rescan time.Duration
+	// ContainersOnly skips every PID whose /proc/<pid>/cgroup (world-readable,
+	// no ptrace access check) is not a container cgroup, before /proc/<pid>/fd
+	// or fdinfo is touched. Host processes are never ptrace-checked, so an LSM
+	// such as AppArmor docker-default logs no denials for them.
+	ContainersOnly bool
+	mu             sync.Mutex
+	lastScan       time.Time
+	known          []string
 
 	engineTime        *prometheus.Desc
 	engineCycles      *prometheus.Desc
@@ -128,6 +134,9 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 	seen := map[string]bool{}
 
 	for _, pid := range pids {
+		if c.ContainersOnly && !inContainer(filepath.Join(c.procRoot, pid, "cgroup")) {
+			continue
+		}
 		comm := readComm(filepath.Join(c.procRoot, pid, "comm"))
 		fdinfoDir := filepath.Join(c.procRoot, pid, "fdinfo")
 		fds, err := os.ReadDir(fdinfoDir)
@@ -256,6 +265,17 @@ func topNByActivity(procs map[procKey]*procData, n int) []procKey {
 		return a.pci < b.pci
 	})
 	return keys[:n]
+}
+
+// containerCgroup matches the cgroup v1/v2 paths of Docker (systemd and
+// cgroupfs drivers), Podman, CRI-O, containerd CRI and Kubernetes pods. Seen
+// from a private cgroup namespace, foreign paths carry a "/../" prefix, which
+// the unanchored match ignores. containerd.service (the shims) does not match.
+var containerCgroup = regexp.MustCompile(`(docker|libpod|crio|cri-containerd)[-/][0-9a-f]{64}|kubepods`)
+
+func inContainer(cgroupPath string) bool {
+	b, err := os.ReadFile(cgroupPath)
+	return err == nil && containerCgroup.Match(b)
 }
 
 func readComm(path string) string {

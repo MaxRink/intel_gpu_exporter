@@ -8,20 +8,21 @@ import (
 )
 
 type Config struct {
-	ListenAddr      string
-	MetricsPath     string
-	SysfsRoot       string
-	ProcRoot        string
-	HwmonRoot       string
-	DevRoot         string
-	ScrapeTimeout   time.Duration
-	EnableFdinfo    bool
-	FdinfoTopN      int
-	FdinfoRescan    time.Duration
-	EnableGpuTop    bool
-	EnablePMU       bool
-	IntelGpuTopPath string
-	LogLevel        string
+	ListenAddr           string
+	MetricsPath          string
+	SysfsRoot            string
+	ProcRoot             string
+	HwmonRoot            string
+	DevRoot              string
+	ScrapeTimeout        time.Duration
+	EnableFdinfo         bool
+	FdinfoTopN           int
+	FdinfoRescan         time.Duration
+	FdinfoContainersOnly bool
+	EnableGpuTop         bool
+	EnablePMU            bool
+	IntelGpuTopPath      string
+	LogLevel             string
 }
 
 func Parse() *Config {
@@ -48,6 +49,7 @@ func ParseArgs(name string, args []string) (*Config, error) {
 	fs.BoolVar(&c.EnableFdinfo, "collector.fdinfo", true, "enable per-process DRM fdinfo collector")
 	fs.IntVar(&c.FdinfoTopN, "collector.fdinfo.top-n", 32, "fdinfo: cap per-process series at the top N processes by aggregate engine time (0 = unlimited)")
 	fs.DurationVar(&c.FdinfoRescan, "collector.fdinfo.rescan-interval", 0, "fdinfo: walk all of /proc at most this often and re-read only known GPU clients in between (0 = every scrape)")
+	fs.BoolVar(&c.FdinfoContainersOnly, "collector.fdinfo.containers-only", false, "fdinfo: only read processes in a container cgroup (checked via /proc/<pid>/cgroup before any ptrace-checked /proc access)")
 	fs.BoolVar(&c.EnableGpuTop, "collector.intel-gpu-top", true, "enable intel_gpu_top fallback collector when PMU is unavailable")
 	fs.BoolVar(&c.EnablePMU, "collector.pmu", true, "enable i915/xe PMU collector via perf_event_open")
 	fs.StringVar(&c.IntelGpuTopPath, "collector.intel-gpu-top.path", "intel_gpu_top", "path to intel_gpu_top binary")

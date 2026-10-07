@@ -87,6 +87,7 @@ func main() {
 	if cfg.EnableFdinfo {
 		fd := collector.NewFdinfo(cfg.ProcRoot, cfg.FdinfoTopN)
 		fd.Rescan = cfg.FdinfoRescan
+		fd.ContainersOnly = cfg.FdinfoContainersOnly
 		sources = append(sources, fd)
 	}
 	var pmu *collector.PMU

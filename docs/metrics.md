@@ -31,7 +31,7 @@ Common labels: `card`, `pci`, `device`, `driver`.
 
 ## Per-process gauges (DRM fdinfo)
 
-Labels: `pci`, `driver`, `pid`, `comm`, `engine` or `region`. Capped at `--collector.fdinfo.top-n` busiest processes. `--collector.fdinfo.rescan-interval` (e.g. `60s`) limits the full `/proc` walk; in between only PIDs that held a DRM fd are re-read, so new clients appear within that interval.
+Labels: `pci`, `driver`, `pid`, `comm`, `engine` or `region`. Capped at `--collector.fdinfo.top-n` busiest processes. `--collector.fdinfo.rescan-interval` (e.g. `60s`) limits the full `/proc` walk; in between only PIDs that held a DRM fd are re-read, so new clients appear within that interval. `--collector.fdinfo.containers-only` reads only processes whose `/proc/<pid>/cgroup` is a container cgroup (Docker, Podman, CRI-O, containerd CRI, Kubernetes). That file needs no ptrace access check, so host processes are never ptrace-checked: run in a container with `pid: host` and `SYS_PTRACE`, and AppArmor docker-default logs no denials for unconfined host peers. Whether a PID holds `/dev/dri` open cannot be read without the same ptrace check, so the cgroup is the prefilter.
 
 - `intel_gpu_client_engine_time_seconds_total`
 - `intel_gpu_client_engine_{cycles,total_cycles}_total` from the xe drm-cycles and drm-total-cycles keys
