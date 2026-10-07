@@ -267,11 +267,14 @@ func topNByActivity(procs map[procKey]*procData, n int) []procKey {
 	return keys[:n]
 }
 
-// containerCgroup matches the cgroup v1/v2 paths of Docker (systemd and
-// cgroupfs drivers), Podman, CRI-O, containerd CRI and Kubernetes pods. Seen
-// from a private cgroup namespace, foreign paths carry a "/../" prefix, which
-// the unanchored match ignores. containerd.service (the shims) does not match.
-var containerCgroup = regexp.MustCompile(`(docker|libpod|crio|cri-containerd)[-/][0-9a-f]{64}|kubepods`)
+// containerCgroup matches a path segment that is a 64-hex container id, bare
+// or with a runtime prefix/.scope suffix: Docker (systemd and cgroupfs
+// drivers), Podman, CRI-O, containerd CRI; plus Kubernetes pods. Seen from a
+// container's private cgroup namespace, a sibling container under the cgroupfs
+// driver ("/docker/<id>") reads "/../<id>": the "docker" segment is above the
+// namespace root, so the id itself is the match. Host services (systemd units,
+// containerd.service with the shims) have no such segment.
+var containerCgroup = regexp.MustCompile(`(?m)/((docker|libpod|crio|cri-containerd)-)?[0-9a-f]{64}(\.scope)?(/|$)|kubepods`)
 
 func inContainer(cgroupPath string) bool {
 	b, err := os.ReadFile(cgroupPath)

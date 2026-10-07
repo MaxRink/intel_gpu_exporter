@@ -366,7 +366,12 @@ func TestFdinfoContainersOnlySkipsHostPIDs(t *testing.T) {
 		procSpec{pid: "12", comm: "python3", fdinfos: []string{"fdinfo_i915.txt"}},
 		procSpec{pid: "13", comm: "nocgroup", fdinfos: []string{"fdinfo_i915.txt"}},
 		procSpec{pid: "14", comm: "shim", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "15", comm: "jellyfin", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "16", comm: "almost", fdinfos: []string{"fdinfo_i915.txt"}},
 	)
+	// cgroupfs driver sibling seen from the exporter's own cgroup namespace.
+	writeFiles(t, filepath.Join(root, "15"), map[string]string{"cgroup": "0::/../" + id + "\n"})
+	writeFiles(t, filepath.Join(root, "16"), map[string]string{"cgroup": "0::/system.slice/x" + id + ".service\n"})
 	writeFiles(t, filepath.Join(root, "10"), map[string]string{"cgroup": "0::/../../system.slice/ssh.service\n"})
 	// Docker systemd driver seen from a private cgroup namespace, and cgroupfs driver.
 	writeFiles(t, filepath.Join(root, "11"), map[string]string{"cgroup": "0::/../../system.slice/docker-" + id + ".scope\n"})
@@ -376,12 +381,12 @@ func TestFdinfoContainersOnlySkipsHostPIDs(t *testing.T) {
 	c := NewFdinfo(root, 0)
 	c.ContainersOnly = true
 	got := strings.Join(samples(t, c), "\n")
-	for _, pid := range []string{"11", "12"} {
+	for _, pid := range []string{"11", "12", "15"} {
 		if !strings.Contains(got, `pid="`+pid+`"`) {
 			t.Errorf("container pid %s missing:\n%s", pid, got)
 		}
 	}
-	for _, pid := range []string{"10", "13", "14"} {
+	for _, pid := range []string{"10", "13", "14", "16"} {
 		if strings.Contains(got, `pid="`+pid+`"`) {
 			t.Errorf("non-container pid %s must be skipped:\n%s", pid, got)
 		}
