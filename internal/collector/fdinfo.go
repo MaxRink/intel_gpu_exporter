@@ -29,9 +29,14 @@ type Fdinfo struct {
 	// or fdinfo is touched. Host processes are never ptrace-checked, so an LSM
 	// such as AppArmor docker-default logs no denials for them.
 	ContainersOnly bool
-	mu             sync.Mutex
-	lastScan       time.Time
-	known          []string
+	// DrmClients is a directory laid out like /sys/kernel/debug/dri: each
+	// <minor>/clients file lists the tgid of every open DRM file. When set,
+	// only those PIDs are read (no /proc walk, no Rescan); debugfs needs no
+	// ptrace access check, so non-GPU processes are never touched.
+	DrmClients string
+	mu         sync.Mutex
+	lastScan   time.Time
+	known      []string
 
 	engineTime        *prometheus.Desc
 	engineCycles      *prometheus.Desc
@@ -117,7 +122,10 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 	defer c.mu.Unlock()
 	full := c.Rescan <= 0 || time.Since(c.lastScan) >= c.Rescan
 	pids := c.known
-	if full {
+	if c.DrmClients != "" {
+		full = false
+		pids = drmClientPIDs(c.DrmClients)
+	} else if full {
 		entries, err := os.ReadDir(c.procRoot)
 		if err != nil {
 			return err
@@ -265,6 +273,33 @@ func topNByActivity(procs map[procKey]*procData, n int) []procKey {
 		return a.pci < b.pci
 	})
 	return keys[:n]
+}
+
+// drmClientPIDs returns the distinct tgids listed in <dir>/*/clients (DRM
+// debugfs: a header line, then "command tgid dev master a uid magic").
+func drmClientPIDs(dir string) []string {
+	files, _ := filepath.Glob(filepath.Join(dir, "*", "clients"))
+	seen := map[string]bool{}
+	var out []string
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) < 2 {
+				continue
+			}
+			if _, err := strconv.Atoi(fields[1]); err != nil || seen[fields[1]] {
+				continue
+			}
+			seen[fields[1]] = true
+			out = append(out, fields[1])
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // containerCgroup matches a path segment that is a 64-hex container id, bare

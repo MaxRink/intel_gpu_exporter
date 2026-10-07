@@ -88,6 +88,7 @@ func main() {
 		fd := collector.NewFdinfo(cfg.ProcRoot, cfg.FdinfoTopN)
 		fd.Rescan = cfg.FdinfoRescan
 		fd.ContainersOnly = cfg.FdinfoContainersOnly
+		fd.DrmClients = cfg.FdinfoDrmClients
 		sources = append(sources, fd)
 	}
 	var pmu *collector.PMU

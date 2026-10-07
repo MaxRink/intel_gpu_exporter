@@ -414,3 +414,33 @@ func TestFdinfoContainersOnlyRechecksKnownPIDs(t *testing.T) {
 		t.Fatalf("a known pid that left its container must be skipped, got:\n%s", got)
 	}
 }
+
+func TestFdinfoDrmClientsReadsOnlyListedPIDs(t *testing.T) {
+	id := strings.Repeat("ef", 32)
+	root := fakeProcRoot(t,
+		procSpec{pid: "30", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt"}},
+		procSpec{pid: "31", comm: "unlisted", fdinfos: []string{"fdinfo_i915.txt"}},
+	)
+	for _, pid := range []string{"30", "31"} {
+		writeFiles(t, filepath.Join(root, pid), map[string]string{"cgroup": "0::/../" + id + "\n"})
+	}
+	dbg := t.TempDir()
+	clients := "             command  tgid dev master a   uid      magic\n" +
+		"              ffmpeg    30 128   n    n     0          0\n" +
+		"              ffmpeg    30 128   n    n     0          0\n"
+	writeFiles(t, filepath.Join(dbg, "128"), map[string]string{"clients": clients})
+	writeFiles(t, filepath.Join(dbg, "0000:84:00.0"), map[string]string{"clients": clients})
+	writeFiles(t, filepath.Join(dbg, "0"), map[string]string{"clients": "             command  tgid dev master a   uid      magic\n"})
+
+	if got := drmClientPIDs(dbg); !slices.Equal(got, []string{"30"}) {
+		t.Fatalf("drmClientPIDs = %v, want [30]", got)
+	}
+	c := NewFdinfo(root, 0)
+	c.ContainersOnly = true
+	c.DrmClients = dbg
+	c.Rescan = time.Hour
+	got := strings.Join(samples(t, c), "\n")
+	if !strings.Contains(got, `pid="30"`) || strings.Contains(got, `pid="31"`) {
+		t.Fatalf("want only the listed DRM client pid 30, got:\n%s", got)
+	}
+}
