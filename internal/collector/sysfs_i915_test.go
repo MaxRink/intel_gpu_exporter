@@ -114,3 +114,16 @@ func TestI915SysfsAvailable(t *testing.T) {
 		t.Error("Available should be true with an i915 device")
 	}
 }
+
+func TestI915SysfsThrottleReasons(t *testing.T) {
+	g := i915GPU(t, map[string]string{
+		"gt/gt0/throttle_reason_status":  "1\n",
+		"gt/gt0/throttle_reason_thermal": "1\n",
+		"gt/gt0/throttle_reason_pl1":     "0\n",
+	}, nil)
+	assertSamples(t, NewI915Sysfs([]discovery.GPU{g}), []string{
+		`intel_gpu_i915_throttle_reason{` + i915Labels + `,gt="0",reason="pl1"} 0`,
+		`intel_gpu_i915_throttle_reason{` + i915Labels + `,gt="0",reason="status"} 1`,
+		`intel_gpu_i915_throttle_reason{` + i915Labels + `,gt="0",reason="thermal"} 1`,
+	})
+}

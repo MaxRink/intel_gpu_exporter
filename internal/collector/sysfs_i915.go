@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -22,6 +23,7 @@ type I915Sysfs struct {
 	freqRPn *prometheus.Desc
 	freqBst *prometheus.Desc
 	rc6     *prometheus.Desc
+	thrott  *prometheus.Desc
 }
 
 func NewI915Sysfs(gpus []discovery.GPU) *I915Sysfs {
@@ -38,6 +40,11 @@ func NewI915Sysfs(gpus []discovery.GPU) *I915Sysfs {
 		freqRP0: d("frequency_rp0", "Hardware maximum (RP0) frequency.", "mhz"),
 		freqRPn: d("frequency_rpn", "Hardware minimum (RPn) frequency.", "mhz"),
 		freqBst: d("frequency_boost", "Boost frequency hint (per-GT only).", "mhz"),
+		thrott: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "i915", "throttle_reason"),
+			"1 while the GT frequency is throttled for this reason (gt/gtN/throttle_reason_*; reason status = any).",
+			append(CommonLabels(), "gt", "reason"), nil,
+		),
 		rc6: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "i915", "rc6_residency_ms"),
 			"RC6 residency counter.", CommonLabels(), nil,
@@ -96,6 +103,13 @@ func (c *I915Sysfs) Update(ctx context.Context, ch chan<- prometheus.Metric) err
 			emit(c.freqRP0, "rps_RP0_freq_mhz")
 			emit(c.freqRPn, "rps_RPn_freq_mhz")
 			emit(c.freqBst, "rps_boost_freq_mhz")
+			files, _ := filepath.Glob(filepath.Join(gt.Path, "throttle_reason_*"))
+			for _, f := range files {
+				if v, err := sysutil.ReadFloat64(f); err == nil {
+					reason := strings.TrimPrefix(filepath.Base(f), "throttle_reason_")
+					ch <- prometheus.MustNewConstMetric(c.thrott, prometheus.GaugeValue, v, append(lv, reason)...)
+				}
+			}
 		}
 
 		if v, err := sysutil.ReadFloat64(filepath.Join(g.DRMPath, "power", "rc6_residency_ms")); err == nil {
