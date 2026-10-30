@@ -71,13 +71,15 @@ func main() {
 	}
 	log.Info("kernel feature summary", "available", avail, "unavailable", missing, "kernel", kver)
 
+	mem := collector.NewMemory(gpus)
+	mem.DevRoot = cfg.DevRoot
 	sources := []collector.Source{
 		collector.NewInfo(gpus),
 		collector.NewI915Sysfs(gpus),
 		collector.NewXeSysfs(gpus),
 		collector.NewHwmon(gpus),
 		collector.NewPCIe(gpus),
-		collector.NewMemory(gpus),
+		mem,
 		collector.NewEngines(gpus),
 		collector.NewLevelZero(log),
 	}
