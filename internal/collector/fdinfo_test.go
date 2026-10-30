@@ -324,3 +324,18 @@ func TestTopNByActivityTiesAreDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestFdinfoUpdateSkipsNonDRMFds(t *testing.T) {
+	root := fakeProcRoot(t, procSpec{pid: "5", comm: "ffmpeg", fdinfos: []string{"fdinfo_i915.txt", "fdinfo_i915.txt"}})
+	mkdirAll(t, filepath.Join(root, "5", "fd"))
+	if err := os.Symlink("/dev/null", filepath.Join(root, "5", "fd", "3")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/dev/dri/renderD128", filepath.Join(root, "5", "fd", "4")); err != nil {
+		t.Fatal(err)
+	}
+	want := `intel_gpu_client_engine_time_seconds_total{comm="ffmpeg",driver="i915",engine="render",pci="0000:00:02.0",pid="5"} 9.204536832`
+	if !slices.Contains(samples(t, NewFdinfo(root, 0)), want) {
+		t.Errorf("fd 3 (/dev/null) must be skipped, fd 4 counted once; got %v", samples(t, NewFdinfo(root, 0)))
+	}
+}

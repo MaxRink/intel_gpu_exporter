@@ -120,6 +120,12 @@ func (c *Fdinfo) Update(ctx context.Context, ch chan<- prometheus.Metric) error 
 			continue
 		}
 		for _, fd := range fds {
+			// Cheap prefilter: only DRM nodes carry drm-* keys. readlink needs
+			// the same access as fdinfo, so a failure falls through to parsing.
+			if target, err := os.Readlink(filepath.Join(c.procRoot, pid, "fd", fd.Name())); err == nil &&
+				!strings.HasPrefix(target, "/dev/dri/") {
+				continue
+			}
 			data := parseFdinfo(filepath.Join(fdinfoDir, fd.Name()))
 			driver, ok := data["drm-driver"]
 			if !ok {
