@@ -73,10 +73,11 @@ func main() {
 
 	sources := []collector.Source{
 		collector.NewInfo(gpus),
-		collector.NewI915Sysfs(gpus),
-		collector.NewXeSysfs(gpus),
-		collector.NewHwmon(gpus),
-		collector.NewPCIe(gpus),
+		// Reads in these sources resume a runtime-suspended GPU; gate them.
+		collector.NewIdleGate(collector.NewI915Sysfs(gpus), gpus),
+		collector.NewIdleGate(collector.NewXeSysfs(gpus), gpus),
+		collector.NewIdleGate(collector.NewHwmon(gpus), gpus),
+		collector.NewIdleGate(collector.NewPCIe(gpus), gpus),
 		collector.NewMemory(gpus),
 		collector.NewEngines(gpus),
 		collector.NewLevelZero(log),

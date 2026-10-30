@@ -113,3 +113,13 @@ func TestItoa(t *testing.T) {
 		}
 	}
 }
+
+func TestInfoRuntimeSuspended(t *testing.T) {
+	g := i915GPU(t, nil, map[string]string{"power/runtime_status": "suspended\n"})
+	for _, s := range samples(t, NewInfo([]discovery.GPU{g})) {
+		if s == `intel_gpu_runtime_suspended{`+i915Labels+`} 1` {
+			return
+		}
+	}
+	t.Errorf("want intel_gpu_runtime_suspended 1, got %v", samples(t, NewInfo([]discovery.GPU{g})))
+}

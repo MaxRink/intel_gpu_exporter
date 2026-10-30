@@ -14,13 +14,19 @@ import (
 )
 
 type Info struct {
-	gpus []discovery.GPU
-	desc *prometheus.Desc
+	gpus      []discovery.GPU
+	desc      *prometheus.Desc
+	suspended *prometheus.Desc
 }
 
 func NewInfo(gpus []discovery.GPU) *Info {
 	return &Info{
 		gpus: gpus,
+		suspended: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "", "runtime_suspended"),
+			"1 while the GPU is runtime-suspended (power/runtime_status); wake-inducing sources replay their last samples meanwhile.",
+			CommonLabels(), nil,
+		),
 		desc: prometheus.NewDesc(
 			prometheus.BuildFQName(Namespace, "", "info"),
 			"Constant 1 gauge labelled with static device metadata.",
@@ -64,6 +70,13 @@ func (c *Info) Update(ctx context.Context, ch chan<- prometheus.Metric) error {
 			subVendor, subDevice, revision,
 			numa, itoa(len(g.Tiles)), modalias,
 		)
+		if st, err := sysutil.ReadString(filepath.Join(g.DevicePath, "power", "runtime_status")); err == nil {
+			v := 0.0
+			if st == "suspended" {
+				v = 1
+			}
+			ch <- prometheus.MustNewConstMetric(c.suspended, prometheus.GaugeValue, v, LabelValues(g)...)
+		}
 	}
 	return nil
 }
