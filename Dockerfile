@@ -2,7 +2,7 @@
 # dlopen Level Zero, even with CGO_ENABLED=0). Run as root with every capability dropped
 # except PERFMON (i915 PMU, memory-region free size) and, for per-client fdinfo
 # with --pid host, SYS_PTRACE; read-only rootfs, only the render node.
-FROM golang:1.27.1-trixie@sha256:0982f930de50a4f1a2b4453d51651f0031082ef2e3a25deb3c763fc39a1094a0 AS build
+FROM golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS build
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
